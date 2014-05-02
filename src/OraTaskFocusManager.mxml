@@ -252,7 +252,7 @@
 			
 			public function toggleDock(event:Event = null):void
 			{
-				if(stage.nativeWindow.visible && stage.nativeWindow.active)
+				if(stage.nativeWindow.visible)
 				{
 					dockFadeOut.play();
 				}
@@ -499,11 +499,17 @@
 					repeatCountInNonFocus = 0;
 				}
 			}
-
+			
+			protected function onFadeInStart(event:EffectEvent):void
+			{
+				stage.nativeWindow.visible = true;
+			}
+			
 			protected function onWindowFadeIn(event:EffectEvent):void
 			{
 				setAutoCloseWindow();
 			}
+			
 			
 		]]>
 	</fx:Script>
@@ -516,7 +522,7 @@
 	
 	<fx:Declarations>
 		<s:Fade id="dockFadeOut" target="{this}" alphaTo="0" duration="400" effectEnd="dock()"/>
-		<s:Fade id="openFadeIn" target="{this}" alphaTo="1" duration="400" effectEnd="onWindowFadeIn(event)"/>
+		<s:Fade id="openFadeIn" target="{this}" alphaTo="1" duration="400" effectStart="onFadeInStart(event)" effectEnd="onWindowFadeIn(event)"/>
 	</fx:Declarations>
 	
 	<fx:Style> 
