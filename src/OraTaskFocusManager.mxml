@@ -132,6 +132,7 @@
 					infoAlert = Alert.show("It's time for a 5 minute break.", "Take a Break", Alert.OK, this);
 					if(stage.nativeWindow.visible == false)
 					{
+						getAllActiveTasks(true);
 						openFadeIn.play();
 					}
 					
@@ -145,9 +146,10 @@
 				if(repeatCountReminder > 30)
 				{
 					repeatCountReminder = 0;
-					infoAlert = Alert.show("Check your tasks, \nhow are you doing with time?!", "Focus", Alert.OK, this);
+					infoAlert = Alert.show("Check your tasks, \nhow are you doing on time?!", "Focus", Alert.OK, this);
 					if(stage.nativeWindow.visible == false)
 					{
+						getAllActiveTasks(true);
 						openFadeIn.play();
 					}
 					
@@ -349,7 +351,7 @@
 				return negativeStr+String(minutes);
 			}
 			
-			public function getAllActiveTasks():void
+			public function getAllActiveTasks(updateList:Boolean = false):void
 			{
 				if(this.currentState == "completedTasks")
 				{
@@ -375,7 +377,7 @@
 					}
 				}
 				
-				if(stage.nativeWindow.visible)
+				if(stage.nativeWindow.visible || updateList)
 				{
 					//sq://this.title = " "+lateTasksCount+" Vone, "+runningTasksCount+" Aktive dhe "+(resultCount-runningTasksCount-lateTasksCount)+" ne pritje";
 					this.title = " "+lateTasksCount+" late, "+runningTasksCount+" soon and "+(resultCount-runningTasksCount-lateTasksCount)+" waiting";
