@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   title="Custom Duration" minWidth="150" cornerRadius="5"
+			   close="onClose()" mouseDownOutside="onClose()" controlBarVisible="true">
+	
+	<s:layout>
+		<s:HorizontalLayout paddingTop="20" paddingBottom="20" paddingLeft="13" paddingRight="13"/>
+	</s:layout>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.aveniri.utils.QuickDataEvent;
+			
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			public var selectedTaskID:int;
+			
+			protected function onClose():void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+			protected function onSave(event:MouseEvent):void
+			{
+				if(hoursInput.value > 0 || minutesInput.value > 0)
+				{
+					var timeDuration:int = (hoursInput.value * 60) + minutesInput.value;
+				
+					var eventData:Object = {recordID: selectedTaskID, duration: timeDuration};
+					FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("setTaskDurationEvent", eventData));
+					onClose();
+				}
+				else
+				{
+					Alert.show("Time duration cannot be zero.");
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<s:VGroup width="100%" >
+		<s:Label text="Hours"/>
+		<s:NumericStepper id="hoursInput" width="100%" minimum="0" maximum="160" stepSize="1"/>
+	</s:VGroup>
+	
+	<s:VGroup width="100%" >
+		<s:Label text="Minutes"/>
+		<s:NumericStepper id="minutesInput" width="100%" minimum="0" maximum="59" stepSize="1"/>
+	</s:VGroup>
+	
+	<s:controlBarContent>
+		<s:Spacer width="100%" />
+		<s:Button label="Save" click="onSave(event)" chromeColor="green" color="#ffffff"/>
+		<s:Spacer width="100%" />
+	</s:controlBarContent>
+	
+</s:TitleWindow>

@@ -1,0 +1,24 @@
+position_x 					0
+position_y 					0
+width 						250
+height 						300
+always_on_top				true/false
+start_on_login				true/false
+focus_reminder_frequency	15min
+session_duration			25min
+break_duration				5min
+ALERTS:-------------------------------
+late_task_alert				1
+reminder_alert				1
+session_end_alert			4
+break_end_alert				5
+
+
+[alert types: --------------------------
+	1.show window and close in 8 seconds
+	2.show window and keep it open
+	3.alert by sound
+	4.sound + show temp
+	5.sound + keep open
+	6.sound + taskbar-icon flashing
+----------------------------------------]

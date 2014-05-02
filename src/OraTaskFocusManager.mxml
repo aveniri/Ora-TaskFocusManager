@@ -1,0 +1,569 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:WindowedApplication xmlns:fx="http://ns.adobe.com/mxml/2009"
+					   xmlns:s="library://ns.adobe.com/flex/spark"
+					   xmlns:mx="library://ns.adobe.com/flex/mx"
+					   visible="false" width="300" height="300" backgroundColor="#f2f2f2"
+					   creationComplete="initApp()" currentState="main" showStatusBar="false">
+	
+	<fx:Script>
+		<![CDATA[
+			import com.aveniri.components.CustomDurationWin;
+			import com.aveniri.components.EditDescriptionTextWin;
+			import com.aveniri.utils.QuickDataEvent;
+			import com.aveniri.utils.StringUtils;
+			
+			import flash.utils.getTimer;
+			import flash.utils.setTimeout;
+			
+			import mx.collections.ArrayCollection;
+			import mx.controls.Alert;
+			import mx.controls.DateField;
+			import mx.events.CloseEvent;
+			import mx.events.EffectEvent;
+			import mx.formatters.DateFormatter;
+			import mx.managers.PopUpManager;
+			
+			private var trayIcon:BitmapData;
+			
+			private var dbConnection:SQLConnection;
+			private var getMainTasksStmt:SQLStatement;
+			private var delTodoStmt:SQLStatement;
+			
+			private var autoCloseWinTimer:Timer;
+			
+			public var timer:Timer;
+			private var repeatCountInNonFocus:int = 0;
+			private var repeatCountSession:int = 0;
+			private var repeatCountBreak:int = 0;
+			private var repeatCountReminder:int = 15;
+			private var infoAlert:Alert;
+			
+			public function initApp():void
+			{	
+				autoCloseWinTimer = new Timer(10000, 1);
+				autoCloseWinTimer.addEventListener(TimerEvent.TIMER, mouseOutTimerHandler);
+				
+				timer = new Timer(60000);
+				timer.start();
+				timer.addEventListener(TimerEvent.TIMER, onTimerHandler);
+				
+				var loader:Loader = new Loader();
+				loader.contentLoaderInfo.addEventListener(Event.COMPLETE, readyToTray);
+				loader.load(new URLRequest("assets/icons/ora16.PNG"));
+				
+				this.addEventListener(MouseEvent.ROLL_OUT, setAutoCloseWindow);
+				this.addEventListener(MouseEvent.ROLL_OVER, pauseAutoCloseWindow);
+				this.addEventListener(Event.CLOSING, minToTray);
+				this.titleBar.addEventListener("openSettingsEvent", openSettingHandler);
+				
+				this.addEventListener("changeTaskStatusEvent", changeTaskStatusHandler);
+				this.addEventListener("customDurationEvent", customDurationHandler);
+				this.addEventListener("setTaskDurationEvent", setTaskDurationHandler);
+				this.addEventListener("editLabelClickEvent", editDescriptionTextHandler);
+				this.addEventListener("saveDescriptionEvent", saveTaskDescriptionHandler);
+				
+				dbConnection = new SQLConnection(); 
+				
+				var defaultDBStructure:File = File.applicationDirectory.resolvePath("fokus.db");
+				var workingDBFile:File = File.applicationStorageDirectory.resolvePath("fokus.db");
+				
+				if(!workingDBFile.exists)
+				{
+					defaultDBStructure.copyTo(workingDBFile);
+				}
+				
+				try
+				{	
+					dbConnection.open(workingDBFile);//Synchronous Database Connection
+					
+					trace("the database was created successfully");
+				}
+				catch (error:SQLError) 
+				{
+					Alert.show(error.message, "Problem Connecting to DB"); 
+					trace("Details:", error.details);
+				}
+				
+				//IT'S DECLARED HERE SINCE IT IS STATIC AND NEVER CHANGES NO NEED TO CREATE ON EVERY REQUEST
+				getMainTasksStmt = new SQLStatement();
+				getMainTasksStmt.sqlConnection = dbConnection;
+				//GET ACTIVE TASKS AND ORDER THEM BY STATUS AND EXPIRATION TIME
+				getMainTasksStmt.text = "SELECT * FROM task WHERE status > 0 ORDER BY status, last_due;";				
+				//TASK STATUS: 1=late(red), 2=active(yellow), 3=new (green), 0=completed
+			}
+			
+			private function setAutoCloseWindow(event:MouseEvent = null):void
+			{
+				autoCloseWinTimer.reset();
+				autoCloseWinTimer.start();
+			}
+			
+			private function pauseAutoCloseWindow(event:MouseEvent = null):void
+			{
+				autoCloseWinTimer.stop();
+			}
+			
+			private function mouseOutTimerHandler(event:TimerEvent):void
+			{
+				if(!stage.nativeWindow.active)
+					dockFadeOut.play();
+			}
+			
+			private function onTimerHandler(event:TimerEvent):void
+			{
+				if(stage.nativeWindow.visible == false || this.currentState == "completedTasks")
+				{
+					repeatCountInNonFocus++;
+					if(repeatCountInNonFocus > 3)
+					{
+						getAllActiveTasks();
+						repeatCountInNonFocus = 0;
+					}
+				}
+				else
+				{
+					getAllActiveTasks();
+				}
+				
+				repeatCountSession ++;
+				if(repeatCountSession > 30)
+				{
+					repeatCountSession = 0;
+					infoAlert = Alert.show("It's time for a 5 minute break.", "Take a Break", Alert.OK, this);
+					if(stage.nativeWindow.visible == false)
+					{
+						openFadeIn.play();
+					}
+					
+					setTimeout(function():void {
+						if(infoAlert.isPopUp)
+							PopUpManager.removePopUp(infoAlert);
+					}, 8000);
+				}
+				
+				repeatCountReminder ++;//initiates with 15min
+				if(repeatCountReminder > 30)
+				{
+					repeatCountReminder = 0;
+					infoAlert = Alert.show("Check your tasks, \nhow are you doing with time?!", "Focus", Alert.OK, this);
+					if(stage.nativeWindow.visible == false)
+					{
+						openFadeIn.play();
+					}
+					
+					setTimeout(function():void {
+						if(infoAlert.isPopUp)//CLOSE ALERT
+						{
+							PopUpManager.removePopUp(infoAlert);
+						}
+					}, 5000);
+				}
+			}
+			
+			private function minToTray(event:Event):void
+			{
+				event.preventDefault();
+				dockFadeOut.play();
+			}
+			
+			public function readyToTray(event:Event):void
+			{	
+				resetPosition();
+				this.visible = true;
+				
+				NativeApplication.nativeApplication.icon.bitmaps = [event.target.content.bitmapData];
+				
+				var myMenu:NativeMenu = new NativeMenu();
+				
+				var resetPosItem:NativeMenuItem = new NativeMenuItem("Reset Position");
+				var onTopItem:NativeMenuItem = new NativeMenuItem("Always On Top");
+				onTopItem.checked = true;
+				var loadOnStartItem:NativeMenuItem = new NativeMenuItem("Start On Login");
+				var openItem:NativeMenuItem = new NativeMenuItem("Open/Close");
+				var closeItem:NativeMenuItem = new NativeMenuItem("Exit");
+				
+				resetPosItem.addEventListener(Event.SELECT, resetPosition);
+				onTopItem.addEventListener(Event.SELECT, function(e:Event):void {
+					alwaysInFront = onTopItem.checked = (!alwaysInFront);
+					
+					if(alwaysInFront && stage.nativeWindow.visible == false)
+					{
+						openFadeIn.play();
+					}
+				});
+				loadOnStartItem.checked = true;
+				loadOnStartItem.addEventListener(Event.SELECT, function(e:Event):void {
+					NativeApplication.nativeApplication.startAtLogin = loadOnStartItem.checked = (!NativeApplication.nativeApplication.startAtLogin);
+				});
+				openItem.addEventListener(Event.SELECT, toggleDock);
+				closeItem.addEventListener(Event.SELECT, closeApp);
+				
+				myMenu.addItem(openItem);
+				myMenu.addItem(new NativeMenuItem("", true));
+				myMenu.addItem(resetPosItem);
+				myMenu.addItem(onTopItem);
+				myMenu.addItem(loadOnStartItem);
+				myMenu.addItem(new NativeMenuItem("", true));
+				myMenu.addItem(closeItem);
+				
+				if(NativeApplication.supportsSystemTrayIcon)
+				{
+					SystemTrayIcon(NativeApplication.nativeApplication.icon).tooltip = "Ora - Task Focus Manager";
+					
+					SystemTrayIcon(NativeApplication.nativeApplication.icon).addEventListener(MouseEvent.CLICK, toggleDock);
+					
+					stage.nativeWindow.addEventListener(NativeWindowDisplayStateEvent.DISPLAY_STATE_CHANGING, winMinimized);
+					
+					SystemTrayIcon(NativeApplication.nativeApplication.icon).menu = myMenu;
+				}
+				//dock();
+				//NativeApplication.nativeApplication.startAtLogin = true;
+				alwaysInFront = true;
+				stage.nativeWindow.activate();
+				getAllActiveTasks();
+			}
+			
+			private function resetPosition(event:Event = null):void
+			{
+				stage.nativeWindow.x = Capabilities.screenResolutionX - (this.width + 30);
+				stage.nativeWindow.y = Capabilities.screenResolutionY - (this.height + 50);
+				
+				if(stage.nativeWindow.visible == false)
+				{
+					openFadeIn.play();
+				}
+			}
+			
+			private function winMinimized(displayStateEvent:NativeWindowDisplayStateEvent):void
+			{
+				if(displayStateEvent.afterDisplayState == NativeWindowDisplayState.MINIMIZED || 
+				   displayStateEvent.afterDisplayState == NativeWindowDisplayState.MAXIMIZED )
+				{
+					displayStateEvent.preventDefault();
+					dockFadeOut.play();
+				}
+			}
+			
+			public function dock(e:Event=null):void
+			{
+				stage.nativeWindow.visible = false;
+				repeatCountInNonFocus = 0;
+			}
+			
+			public function toggleDock(event:Event = null):void
+			{
+				if(stage.nativeWindow.visible && stage.nativeWindow.active)
+				{
+					dockFadeOut.play();
+				}
+				else
+				{
+					openFadeIn.play();
+					NativeApplication.nativeApplication.activate();
+					stage.nativeWindow.activate();
+					tasksList.setFocus();
+					getAllActiveTasks();
+				}
+				
+				stage.nativeWindow.orderToFront();
+			}
+			
+			private function closeApp(event:Event):void
+			{
+				NativeApplication.nativeApplication.icon.bitmaps = [];
+				stage.nativeWindow.close();
+			}
+			
+			public function openSettingHandler(event:Event):void
+			{
+				Alert.show("Not implemented yet");
+			}
+			
+			public function editDescriptionTextHandler(event:QuickDataEvent):void
+			{
+				var editTextWin:EditDescriptionTextWin = new EditDescriptionTextWin;
+				editTextWin.selectedTaskID = event.data.task_id;
+				editTextWin.descriptionText = event.data.description;
+				PopUpManager.addPopUp(editTextWin, this, true);
+				editTextWin.width = this.width - 30;
+				PopUpManager.centerPopUp(editTextWin);
+			}
+			
+			public function customDurationHandler(event:QuickDataEvent):void
+			{
+				var durationWin:CustomDurationWin = new CustomDurationWin;
+				durationWin.selectedTaskID = event.data.task_id;
+				PopUpManager.addPopUp(durationWin, this, true);
+				PopUpManager.centerPopUp(durationWin);
+			}
+			
+			public function setTaskDurationHandler(event:QuickDataEvent):void
+			{
+				var dueDate:Date = new Date();
+				dueDate.time = dueDate.time + (event.data.duration * 60000);
+				updateTaskRecord({status: 2, last_due: dueDate}, event.data.recordID);
+			}
+			
+			public function saveTaskDescriptionHandler(event:QuickDataEvent):void
+			{
+				updateTaskRecord({description: event.data.description}, event.data.recordID);
+			}
+			
+			public function changeTaskStatusHandler(event:QuickDataEvent):void
+			{
+				updateTaskRecord({status: event.data.newStatus, last_due: null}, event.data.task_id);
+			}
+			
+			public function getMinutesDiff(dueDate:Date, now:Date):Number
+			{
+				return Math.floor( (dueDate.time - now.time) / 60000);
+			}
+			
+			public function getTimeDiffLabel(task:*, now:Date):String
+			{
+				var minutes:Number = getMinutesDiff(task.last_due, now);
+				var negativeStr:String = "";
+				if(minutes < 0)
+				{
+					negativeStr = "- ";
+					if(task.status != 1)
+					{
+						updateTaskRecord({status: 1}, task.task_id, false);
+						task.status = 4;//equivalent to 1 but it's set to 4 temporarily to illustrate by purple color
+						if(stage.nativeWindow.visible == false)
+						{
+							openFadeIn.play();
+						}
+					}
+					minutes = Math.abs(minutes);
+				}
+				
+				if(minutes > 60)
+				{
+					var hours:int = Math.floor(minutes/60);
+					minutes = minutes - (hours*60);
+					
+					return negativeStr+String(hours)+"h "+String(minutes);
+				}
+				
+				return negativeStr+String(minutes);
+			}
+			
+			public function getAllActiveTasks():void
+			{
+				if(this.currentState == "completedTasks")
+				{
+					this.currentState = "main";
+				}
+				
+				var now:Date = new Date();
+				var runningTasksCount:int = 0;				
+				var lateTasksCount:int = 0;
+				
+				getMainTasksStmt.execute();
+				var result:ArrayCollection = new ArrayCollection(getMainTasksStmt.getResult().data);
+				var resultCount:int = result.length;
+				for(var i:int = 0; i < resultCount; i++)
+				{	
+					if(result[i].status != 3)
+					{
+						result[i].minutes = getTimeDiffLabel(result[i], now);
+						if(result[i].status == 2)
+							runningTasksCount++;
+						else
+							lateTasksCount++;
+					}
+				}
+				
+				if(stage.nativeWindow.visible)
+				{
+					//sq://this.title = " "+lateTasksCount+" Vone, "+runningTasksCount+" Aktive dhe "+(resultCount-runningTasksCount-lateTasksCount)+" ne pritje";
+					this.title = " "+lateTasksCount+" late, "+runningTasksCount+" soon and "+(resultCount-runningTasksCount-lateTasksCount)+" waiting";
+					
+					tasksList.dataProvider = result;
+				}
+			}
+			
+			
+			public function getAllCompletedTasks():void
+			{
+				var doneTasksStmt:SQLStatement = new SQLStatement();
+				doneTasksStmt.sqlConnection = dbConnection;
+				/**
+				 * TO-DO: format date created and date completed and show it as info in the list
+				 */
+				doneTasksStmt.text = "SELECT * FROM task WHERE status = 0;";
+				doneTasksStmt.execute();
+				var result:ArrayCollection = new ArrayCollection(doneTasksStmt.getResult().data);
+				
+				tasksList.dataProvider = result;
+			}
+			
+			
+			public function insertNewTask(todoTxt:String):void
+			{
+				if(todoTxt == "")
+				{
+					Alert.show("Describe your task.", "Invalid");
+					return;
+				}
+				
+				try
+				{
+					var addItemStmt:SQLStatement = new SQLStatement();
+					addItemStmt.sqlConnection = dbConnection;
+					
+					var sql:String = "INSERT INTO task ( description, created, id_project, status ) " +
+						"VALUES ( :todo, :now, '0', '3' );"
+					addItemStmt.text = sql;
+					
+					// set parameter values
+					addItemStmt.parameters[":todo"] = todoTxt;
+					addItemStmt.parameters[":now"] = new Date();//dateToMySqlFormat();
+					addItemStmt.execute();
+					
+					getAllActiveTasks();
+				}
+				catch (error:SQLError)
+				{
+					Alert.show(error.message, "Database Problem");
+					trace("Error message:", error.message);
+					trace("Details:", error.details);
+				}
+			}
+			
+			
+			public function updateTaskRecord(updateFields:Object, recordID:int = -1, refreshList:Boolean=true):void
+			{
+				try 
+				{
+					// begin the transaction
+					//dbConnection.begin();
+					
+					var addItemStmt:SQLStatement = new SQLStatement(); 
+					addItemStmt.sqlConnection = dbConnection;
+					
+					var fieldsToUpdate:String = "";
+					for (var field:String in updateFields)
+					{
+						fieldsToUpdate += field+" = :"+field+","; 
+						addItemStmt.parameters[":"+field] = updateFields[field];
+					}
+					fieldsToUpdate = fieldsToUpdate.slice(0,-1);
+					
+					var sql:String = "UPDATE task SET "+fieldsToUpdate;
+					
+					if(recordID > -1)
+					{
+						sql += " WHERE task_id = :recordID";
+						addItemStmt.parameters[":recordID"] = recordID;
+					}
+					
+					addItemStmt.text = sql;					
+					addItemStmt.execute();
+					
+					//commit the transaction
+					//dbConnection.commit();
+					if(refreshList)
+						getAllActiveTasks();
+				}
+				catch (error:SQLError)
+				{
+					//dbConnection.rollback();
+					Alert.show(error.message, "Database Problem");
+					trace("Error message:", error.message); 
+					trace("Details:", error.details); 
+				}
+			}
+			
+			protected function newTaskInput_keyDownHandler(event:KeyboardEvent):void
+			{
+				if(event.keyCode == Keyboard.ENTER)
+				{
+					insertNewTask( StringUtils.trim(newTaskInput.text) );
+					newTaskInput.text = "";
+				}
+			}
+			
+			protected function switchToCompletedTasksList():void
+			{
+				if(this.currentState == "completedTasks")
+				{
+					this.currentState = "main"
+					getAllActiveTasks();
+				}
+				else
+				{
+					this.currentState = "completedTasks"
+					getAllCompletedTasks();
+					repeatCountInNonFocus = 0;
+				}
+			}
+
+			protected function onWindowFadeIn(event:EffectEvent):void
+			{
+				setAutoCloseWindow();
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:states>
+		<s:State name="main"/>
+		<s:State name="completedTasks"/>
+		<s:State name="settings"/>
+	</s:states>
+	
+	<fx:Declarations>
+		<s:Fade id="dockFadeOut" target="{this}" alphaTo="0" duration="400" effectEnd="dock()"/>
+		<s:Fade id="openFadeIn" target="{this}" alphaTo="1" duration="400" effectEnd="onWindowFadeIn(event)"/>
+	</fx:Declarations>
+	
+	<fx:Style> 
+		@namespace s "library://ns.adobe.com/flex/spark"; 
+		@namespace mx "library://ns.adobe.com/flex/mx";
+		s|WindowedApplication 
+		{
+			skinClass:ClassReference("com.aveniri.skin.AceChromeWinAppSkin"); 
+			background-color:#999999; 
+			background-alpha:"0.88"; 
+		}
+		
+		mx|PopUpMenuButton 
+		{
+			skinClass:ClassReference("com.aveniri.skin.SmallPopUpButtonSkin");
+		}
+		
+		.popUpCustomStyle 
+		{
+			contentBackgroundAlpha: 1.0;
+			textAlign: right;
+		}
+		
+		.popUpBtnStyle 
+		{
+			fillAlphas: 0.88, 0.95, 1.0, 1.0;
+			
+			popUpIcon: ClassReference("com.aveniri.skin.DoubleBtnArrowIcon");
+		}
+
+		s|SkinnableTextBase:normalWithPrompt {
+			color: #3FB4FC;
+		}
+
+	</fx:Style>
+	
+	
+	<s:TextInput id="newTaskInput" left="0" right="0" height="31" prompt=" + create new task" includeIn="main"
+				 borderVisible="true" keyDown="newTaskInput_keyDownHandler(event)" borderColor="#66C5FF">
+		<s:filters> 
+			<s:DropShadowFilter blurX="10" blurY="12" alpha=".55" distance="0" color="0x0079C4" angle="90" inner="true" /> 
+		</s:filters>
+	</s:TextInput>
+	<s:List id="tasksList" top.main="31" top.completedTasks="0" bottom="21" left="0" right="0" 
+			borderVisible="false" itemRenderer="com.aveniri.components.TaskItemRenderer"
+			contentBackgroundAlpha="0" labelField="description" horizontalScrollPolicy="off"/>
+	<mx:LinkButton id="switchToCompletedTasksBtn" left="1" right="1" bottom="0" height="20" 
+				   label.main="Completed Tasks" label.completedTasks="(back to) Active Tasks" 
+				   click="switchToCompletedTasksList()"/>
+</s:WindowedApplication>

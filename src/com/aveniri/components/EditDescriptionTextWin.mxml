@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:TitleWindow xmlns:fx="http://ns.adobe.com/mxml/2009" 
+			   xmlns:s="library://ns.adobe.com/flex/spark" 
+			   xmlns:mx="library://ns.adobe.com/flex/mx"
+			   title="Edit Task Description" minWidth="150" maxHeight="180" cornerRadius="5"
+			   close="onClose()" mouseDownOutside="onClose()" controlBarVisible="true">
+	
+	<s:layout>
+		<s:BasicLayout/>
+	</s:layout>
+	
+	<fx:Script>
+		<![CDATA[
+			import com.aveniri.utils.QuickDataEvent;
+			import com.aveniri.utils.StringUtils;
+			
+			import mx.controls.Alert;
+			import mx.core.FlexGlobals;
+			import mx.events.CloseEvent;
+			import mx.managers.PopUpManager;
+			
+			public var selectedTaskID:int;
+			[Bindable]
+			public var descriptionText:String = "";
+			
+			protected function onClose():void
+			{
+				PopUpManager.removePopUp(this);
+			}
+			
+			protected function onSave():void
+			{
+				var descValue:String = StringUtils.trim(descTextArea.text);
+				if(descValue != "")
+				{
+					var eventData:Object = {recordID: selectedTaskID, description: descValue};
+					FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("saveDescriptionEvent", eventData));
+					onClose();
+				}
+				else
+				{
+					Alert.show("Description cannot be empty.");
+				}
+			}
+			
+			protected function onInputEnter(event:KeyboardEvent):void
+			{
+				if(event.keyCode == Keyboard.ENTER)
+				{
+					onSave();
+				}
+			}
+			
+		]]>
+	</fx:Script>
+	<fx:Declarations>
+		<!-- Place non-visual elements (e.g., services, value objects) here -->
+	</fx:Declarations>
+	
+	<s:TextArea id="descTextArea" top="20" bottom="20" left="10" right="10" text="{descriptionText}" keyDown="onInputEnter(event)"/>
+	
+	<s:controlBarContent>
+		<s:Spacer width="100%" />
+		<s:Button label="Save" click="onSave()" chromeColor="green" color="#ffffff"/>
+		<s:Spacer width="100%" />
+	</s:controlBarContent>
+	
+</s:TitleWindow>

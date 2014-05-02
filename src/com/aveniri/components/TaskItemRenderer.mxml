@@ -1,0 +1,106 @@
+<?xml version="1.0" encoding="utf-8"?>
+<s:ItemRenderer xmlns:fx="http://ns.adobe.com/mxml/2009" 
+				xmlns:s="library://ns.adobe.com/flex/spark" 
+				xmlns:mx="library://ns.adobe.com/flex/mx" 
+				autoDrawBackground="true" width="100%">
+	
+	<fx:Script>
+		<![CDATA[
+			import com.aveniri.utils.QuickDataEvent;
+			
+			import mx.collections.ArrayList;
+			import mx.controls.Menu;
+			import mx.core.FlexGlobals;
+			import mx.events.FlexEvent;
+			import mx.events.MenuEvent;
+			
+			[Bindable]
+			public var menuData:Array = [
+				{data:   3,	label: "Do Later"},
+				{data: 	 0,	label: "Custom"},
+				{data: 	30,	label: "30 min"},
+				{data: 	60,	label: "1 hour"},
+				{data: 120,	label: "2 hours"},
+				{data: 240,	label: "4 hours"},
+				{data: 480,	label: "8 hours"}
+			];
+			
+			
+			[Bindable] 
+			public var statusColors1:ArrayList = new ArrayList([0xC2DD5F, 0xFF4F4F, 0xFFFFC1, 0xffffff, 0xFF51FF]);			
+			[Bindable] 
+			public var statusColors2:ArrayList = new ArrayList([0x9ED800, 0xE21616, 0xFFE100, 0xE5E5E5, 0xE000F4]);
+			
+			[Bindable] 
+			[Embed(source='assets/icons/clock_play.png')]
+			public var clockPlayIcon:Class;
+			
+			protected function changeTaskStatus(new_status:int = -1):void
+			{
+				if(new_status == -1)
+					data.newStatus = (data.status==0)?3:0;
+				else
+					data.newStatus = new_status;
+				
+				FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("changeTaskStatusEvent", data));
+			}
+			
+			protected function editLableOnClick(event:MouseEvent):void
+			{
+				FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("editLabelClickEvent", data));
+			}
+			
+			protected function itemClickHandler(e:MenuEvent):void 
+			{
+				//event.currentTarget.label= "Send to: " + event.label;
+				if(e.item.data != null)
+				{
+					if(e.item.data == 3)
+					{
+						changeTaskStatus(3);
+					}
+					else if(e.item.data == 0)
+					{
+						FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("customDurationEvent", {task_id: data.task_id}));
+					}
+					else
+					{
+						var eventData:Object = {recordID: data.task_id, duration: e.item.data};
+						FlexGlobals.topLevelApplication.dispatchEvent(new QuickDataEvent("setTaskDurationEvent", eventData));
+					}
+				}
+			}
+			
+			protected function popupBtn_creationCompleteHandler(event:FlexEvent):void
+			{
+				(popupBtn.popUp as Menu).addEventListener(MenuEvent.CHANGE, itemClickHandler);
+			}
+			
+		]]>
+	</fx:Script>
+	
+	<s:BorderContainer top="0" right="0" bottom="0" left="0" borderAlpha=".8">
+		<s:backgroundFill>
+			<s:LinearGradient rotation="90">
+				<s:GradientEntry color="{(statusColors1.getItemAt(data.status) as uint)}" ratio=".05" alpha=".9"/>
+				<s:GradientEntry color="{(statusColors2.getItemAt(data.status) as uint)}" ratio=".95" alpha=".9"/>
+			</s:LinearGradient>
+		</s:backgroundFill>
+		<s:layout>
+			<s:HorizontalLayout paddingLeft="7" paddingRight="7" paddingTop="5" paddingBottom="5"/>
+		</s:layout>
+		
+		<s:CheckBox change="changeTaskStatus()" selected="{(data.status == 0)}" toolTip="Mark as Completed"/>
+		
+		<s:Label text="{data.description}" maxDisplayedLines="3" lineBreak="toFit" buttonMode="true"
+				 width="100%" click="editLableOnClick(event)" paddingTop="4" />
+		
+		<mx:PopUpMenuButton id="popupBtn" dataProvider="{menuData}" visible="{(data.status != 0)}" 
+							label="{data.minutes}" icon="{(data.status == 3)?clockPlayIcon:null}"  
+							skin="com.aveniri.skin.SmallPopUpButtonSkin" chromeColor="#ffffff" openAlways="true"
+							styleName="popUpBtnStyle" popUpStyleName="popUpCustomStyle" arrowButtonWidth="5" 
+							creationComplete="popupBtn_creationCompleteHandler(event)"/> 
+			
+	</s:BorderContainer>
+	
+</s:ItemRenderer>
